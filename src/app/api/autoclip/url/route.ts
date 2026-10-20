@@ -5,11 +5,10 @@ import { getCurrentUser } from "@/lib/auth/helpers";
 import { prisma } from "@/lib/db";
 import { probeMedia } from "@/lib/video/ffmpeg";
 import { dispatchAutoClipJob } from "@/lib/queue/dispatcher";
+import { isStreamingPlatformUrl, getRemoteVideoTitle, downloadWithYtDlp, downloadDirectUrl } from "@/lib/video/downloader";
 import { nanoid } from "nanoid";
 
 export const dynamic = "force-dynamic";
-
-const MAX_DOWNLOAD_SIZE = 500 * 1024 * 1024; // 500MB
 
 function isPrivateIpOrHost(hostname: string): boolean {
   const lower = hostname.toLowerCase();
@@ -49,7 +48,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { url, title = "URL Imported Video", language = "en", targetCount = 4, minDuration = 15, maxDuration = 60 } = body;
+    const { url, title, language = "en", targetCount = 4, minDuration = 15, maxDuration = 60 } = body;
 
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Please provide a valid video URL" }, { status: 400 });
@@ -81,64 +80,39 @@ export async function POST(req: NextRequest) {
     const fileId = `${Date.now()}_${nanoid(8)}`;
     const destinationPath = path.join(uploadsDir, `${fileId}.mp4`);
 
-    // Fetch the remote video stream
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "User-Agent": "ClipForgeAI/1.0 (VideoInjestBot)",
-      },
-      signal: AbortSignal.timeout(180000), // 3 min timeout
-    });
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Failed to fetch video URL: HTTP ${response.status} ${response.statusText}` },
-        { status: 400 }
-      );
-    }
-
-    const contentLength = response.headers.get("content-length");
-    if (contentLength && parseInt(contentLength, 10) > MAX_DOWNLOAD_SIZE) {
-      return NextResponse.json(
-        { error: "Remote video exceeds size limit of 500MB" },
-        { status: 400 }
-      );
-    }
-
-    // Stream write response body to disk
-    if (!response.body) {
-      return NextResponse.json({ error: "No response body received from video URL" }, { status: 400 });
-    }
-
-    const fileStream = fs.createWriteStream(destinationPath);
+    let finalTitle = title && title.trim().length > 0 ? title.trim() : "Imported Video";
     let downloadedBytes = 0;
 
-    const reader = response.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        downloadedBytes += value.length;
-        if (downloadedBytes > MAX_DOWNLOAD_SIZE) {
-          fileStream.close();
-          if (fs.existsSync(destinationPath)) fs.unlinkSync(destinationPath);
-          return NextResponse.json(
-            { error: "Download exceeded 500MB size limit." },
-            { status: 400 }
-          );
+    // Platform-specific extraction (YouTube, Vimeo, TikTok, etc.)
+    if (isStreamingPlatformUrl(url)) {
+      if (!title || title.trim().length === 0 || title === "Imported Video" || title === "URL Imported Video") {
+        const remoteTitle = await getRemoteVideoTitle(url);
+        if (remoteTitle) finalTitle = remoteTitle;
+      }
+
+      try {
+        await downloadWithYtDlp(url, destinationPath);
+        if (fs.existsSync(destinationPath)) {
+          downloadedBytes = fs.statSync(destinationPath).size;
         }
-        fileStream.write(Buffer.from(value));
+      } catch (dlErr: any) {
+        return NextResponse.json(
+          {
+            error: `Could not extract video stream from this URL: ${dlErr.message || "Video unavailable or restricted"}. Make sure the video is public and accessible.`,
+          },
+          { status: 400 }
+        );
+      }
+    } else {
+      // Direct raw video file URL
+      try {
+        downloadedBytes = await downloadDirectUrl(url, destinationPath);
+      } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
       }
     }
-    fileStream.end();
 
-    // Wait for file stream close
-    await new Promise((res, rej) => {
-      fileStream.on("finish", () => res(null));
-      fileStream.on("error", rej);
-    });
-
-    // Validate video via ffprobe
+    // Validate downloaded video via ffprobe
     let probe;
     try {
       probe = await probeMedia(destinationPath);
@@ -162,7 +136,7 @@ export async function POST(req: NextRequest) {
     const project = await prisma.project.create({
       data: {
         userId: user.id,
-        title,
+        title: finalTitle,
         type: "AUTOCLIP",
         status: "GENERATING",
         platform: "TIKTOK",
@@ -184,7 +158,7 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         projectId: project.id,
         type: "VIDEO",
-        name: title,
+        name: finalTitle,
         fileName: `${fileId}.mp4`,
         filePath: destinationPath,
         fileSize: downloadedBytes,
@@ -244,7 +218,8 @@ export async function POST(req: NextRequest) {
         success: true,
         projectId: project.id,
         jobId: job.id,
-        message: "Video imported from URL. AutoClip analysis started.",
+        title: finalTitle,
+        message: `Extracted and started processing "${finalTitle}".`,
       },
       { status: 201 }
     );
