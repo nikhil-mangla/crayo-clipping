@@ -1,0 +1,558 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Authentication & Users
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  image         String?
+  role          UserRole  @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  projects      Project[]
+  mediaAssets   MediaAsset[]
+  voiceovers    Voiceover[]
+  exports       Export[]
+  subscription  Subscription?
+  usageLedger   UsageLedger[]
+  brandKit      BrandKit?
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  generationJobs VideoGenerationJob[]
+
+  @@index([email])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================
+// Projects & Scenes
+// ============================================
+
+model Project {
+  id          String        @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  type        ProjectType   @default(AI_VIDEO)
+  status      ProjectStatus @default(DRAFT)
+  platform    Platform      @default(YOUTUBE_SHORTS)
+  aspectRatio AspectRatio   @default(VERTICAL_9_16)
+  duration    Int?          // target duration in seconds
+  language    String        @default("en")
+  tone        String?
+  script      Json?         // structured script data
+  settings    Json?         // project-specific settings
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenes      Scene[]
+  versions    ProjectVersion[]
+  mediaAssets MediaAsset[]
+  exports     Export[]
+  generationJobs VideoGenerationJob[]
+  subtitleTracks SubtitleTrack[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ProjectVersion {
+  id        String   @id @default(cuid())
+  projectId String
+  version   Int
+  data      Json     // full project snapshot
+  createdAt DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, version])
+  @@index([projectId])
+}
+
+model Scene {
+  id            String    @id @default(cuid())
+  projectId     String
+  order         Int
+  narration     String?   @db.Text
+  visualPrompt  String?   @db.Text
+  mediaAssetId  String?
+  startTime     Float?    // seconds
+  endTime       Float?    // seconds
+  duration      Float?    // seconds
+  subtitleText  String?   @db.Text
+  transition    String?   @default("fade")
+  soundEffect   String?
+  settings      Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mediaAsset    MediaAsset? @relation(fields: [mediaAssetId], references: [id])
+
+  @@index([projectId])
+  @@index([order])
+}
+
+// ============================================
+// Media & Assets
+// ============================================
+
+model MediaAsset {
+  id          String      @id @default(cuid())
+  userId      String
+  projectId   String?
+  type        MediaType
+  name        String
+  fileName    String
+  filePath    String
+  fileSize    Int         // bytes
+  mimeType    String
+  width       Int?
+  height      Int?
+  duration    Float?      // seconds for audio/video
+  metadata    Json?
+  source      MediaSource @default(UPLOAD)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  scenes      Scene[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([type])
+}
+
+model Voiceover {
+  id          String          @id @default(cuid())
+  userId      String
+  text        String          @db.Text
+  voice       String
+  language    String          @default("en")
+  speed       Float           @default(1.0)
+  provider    String?
+  filePath    String?
+  fileSize    Int?
+  duration    Float?
+  status      GenerationStatus @default(QUEUED)
+  error       String?
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ============================================
+// Subtitles & Transcription
+// ============================================
+
+model SubtitleTrack {
+  id          String   @id @default(cuid())
+  projectId   String
+  language    String   @default("en")
+  style       String   @default("default")
+  words       Json     // array of {word, start, end, confidence}
+  srt         String?  @db.Text
+  vtt         String?  @db.Text
+  settings    Json?    // font, color, position, etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Transcript {
+  id          String   @id @default(cuid())
+  jobId       String?
+  language    String   @default("en")
+  text        String   @db.Text
+  words       Json     // word-level timing
+  segments    Json?    // segment-level data
+  duration    Float?
+  provider    String?
+  createdAt   DateTime @default(now())
+
+  @@index([jobId])
+}
+
+// ============================================
+// Video Generation & Processing
+// ============================================
+
+model VideoGenerationJob {
+  id          String           @id @default(cuid())
+  userId      String
+  projectId   String?
+  type        JobType
+  status      GenerationStatus @default(QUEUED)
+  progress    Int              @default(0) // 0-100
+  stage       String?          // current processing stage
+  input       Json?            // job input parameters
+  output      Json?            // job output/result
+  error       String?          @db.Text
+  retryCount  Int              @default(0)
+  maxRetries  Int              @default(3)
+  priority    Int              @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clipCandidates ClipCandidate[]
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([status])
+  @@index([type])
+}
+
+model ClipCandidate {
+  id          String   @id @default(cuid())
+  jobId       String
+  title       String?
+  startTime   Float
+  endTime     Float
+  duration    Float
+  transcript  String?  @db.Text
+  score       Float    @default(0)
+  scoreBreakdown Json? // detailed scoring
+  aspectRatio AspectRatio @default(VERTICAL_9_16)
+  status      ClipStatus  @default(CANDIDATE)
+  filePath    String?
+  thumbnailPath String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  job         VideoGenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([score])
+}
+
+// ============================================
+// Exports
+// ============================================
+
+model Export {
+  id          String       @id @default(cuid())
+  userId      String
+  projectId   String
+  format      String       @default("mp4")
+  resolution  String       @default("1080p")
+  filePath    String?
+  fileSize    Int?
+  duration    Float?
+  status      GenerationStatus @default(QUEUED)
+  error       String?
+  downloadCount Int        @default(0)
+  expiresAt   DateTime?
+  createdAt   DateTime     @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([status])
+}
+
+// ============================================
+// Billing & Subscriptions
+// ============================================
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  plan               SubscriptionPlan   @default(FREE)
+  status             SubscriptionStatus @default(ACTIVE)
+  stripeCustomerId   String?
+  stripeSubscriptionId String?
+  stripePriceId      String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentEvents      PaymentEvent[]
+
+  @@index([stripeCustomerId])
+  @@index([status])
+}
+
+model UsageLedger {
+  id          String      @id @default(cuid())
+  userId      String
+  type        UsageType
+  amount      Int         // positive = credit, negative = debit
+  balance     Int         // running balance after this entry
+  description String?
+  referenceId String?     // job/export/etc ID
+  period      String      // "2024-01" format
+  createdAt   DateTime    @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, type, period])
+  @@index([referenceId])
+}
+
+model PaymentEvent {
+  id              String   @id @default(cuid())
+  subscriptionId  String?
+  stripeEventId   String   @unique
+  type            String   // stripe event type
+  data            Json
+  processed       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([stripeEventId])
+  @@index([processed])
+}
+
+// ============================================
+// Brand Kit
+// ============================================
+
+model BrandKit {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  name        String?
+  logoPath    String?
+  colors      Json?    // {primary, secondary, accent, etc.}
+  fonts       Json?    // {heading, body, etc.}
+  watermark   Json?    // {enabled, position, opacity, path}
+  intro       Json?    // {enabled, duration, mediaPath}
+  outro       Json?    // {enabled, duration, mediaPath}
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// Notifications & Audit
+// ============================================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  data      Json?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  data      Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+// ============================================
+// Enums
+// ============================================
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum ProjectType {
+  AI_VIDEO
+  AUTOCLIP
+  VOICEOVER
+  SUBTITLE
+  IMAGE_GEN
+  CUSTOM
+}
+
+enum ProjectStatus {
+  DRAFT
+  GENERATING
+  READY
+  RENDERING
+  COMPLETED
+  FAILED
+  ARCHIVED
+}
+
+enum Platform {
+  YOUTUBE_SHORTS
+  INSTAGRAM_REELS
+  TIKTOK
+  FACEBOOK_REELS
+  YOUTUBE
+  CUSTOM
+}
+
+enum AspectRatio {
+  VERTICAL_9_16
+  LANDSCAPE_16_9
+  SQUARE_1_1
+  PORTRAIT_4_5
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+  VOICEOVER
+  MUSIC
+  SOUND_EFFECT
+  SUBTITLE
+  THUMBNAIL
+  OTHER
+}
+
+enum MediaSource {
+  UPLOAD
+  AI_GENERATED
+  STOCK
+  RECORDED
+  EXTRACTED
+}
+
+enum GenerationStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum JobType {
+  SCRIPT_GENERATION
+  IMAGE_GENERATION
+  VIDEO_GENERATION
+  VOICEOVER_GENERATION
+  TRANSCRIPTION
+  SUBTITLE_GENERATION
+  CLIP_DETECTION
+  VIDEO_RENDER
+  AUDIO_EXTRACTION
+  MEDIA_TRANSCODE
+  AUTOCLIP
+}
+
+enum ClipStatus {
+  CANDIDATE
+  SELECTED
+  RENDERING
+  RENDERED
+  EXPORTED
+  REJECTED
+}
+
+enum SubscriptionPlan {
+  FREE
+  CREATOR
+  PRO
+  TEAM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+  TRIALING
+}
+
+enum UsageType {
+  VIDEO_GENERATION
+  VOICEOVER_MINUTES
+  IMAGE_GENERATION
+  EXPORT_MINUTES
+  STORAGE_MB
+  TRANSCRIPTION_MINUTES
+  AUTOCLIP_MINUTES
+}
