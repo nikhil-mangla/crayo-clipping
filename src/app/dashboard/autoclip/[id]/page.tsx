@@ -102,13 +102,13 @@ export default function AutoClipStudioPage({
   const fetchProjectData = async () => {
     try {
       // Find latest job for project
-      const projRes = await fetch(`/api/autoclip/projects`);
+      const projRes = await fetch(`/api/autoclip/projects?t=${Date.now()}`, { cache: "no-store" });
       if (!projRes.ok) return;
       const projData = await projRes.json();
       const p = (projData.projects || []).find((x: any) => x.id === projectId);
 
       if (p && p.jobId) {
-        const jobRes = await fetch(`/api/autoclip/jobs/${p.jobId}`);
+        const jobRes = await fetch(`/api/autoclip/jobs/${p.jobId}?t=${Date.now()}`, { cache: "no-store" });
         if (jobRes.ok) {
           const jd = await jobRes.json();
           setJob(jd.job);

@@ -1,4 +1,4 @@
-import { getAutoclipQueue, AutoClipJobPayload, RenderClipJobPayload } from "./autoclip-queue";
+import { getAutoclipQueue, ensureAutoclipWorker, AutoClipJobPayload, RenderClipJobPayload } from "./autoclip-queue";
 import { executeAutoClipPipeline, executeRenderClip } from "../video/autoclip-service";
 
 /**
@@ -8,6 +8,9 @@ export async function dispatchAutoClipJob(payload: AutoClipJobPayload): Promise<
   let queuedViaBullMQ = false;
 
   try {
+    // Ensure worker is active
+    ensureAutoclipWorker();
+
     const queue = getAutoclipQueue();
     await queue.add("process_autoclip", payload, {
       jobId: payload.jobId,
@@ -17,7 +20,7 @@ export async function dispatchAutoClipJob(payload: AutoClipJobPayload): Promise<
     console.warn("Could not push job to Redis BullMQ queue, falling back to direct background execution:", err.message);
   }
 
-  // If Redis was not reached or to guarantee instantaneous execution in local dev, execute asynchronously
+  // If Redis was not reached or queue failed, execute directly in background
   if (!queuedViaBullMQ) {
     setImmediate(async () => {
       try {
@@ -36,6 +39,9 @@ export async function dispatchRenderClipJob(payload: RenderClipJobPayload): Prom
   let queuedViaBullMQ = false;
 
   try {
+    // Ensure worker is active
+    ensureAutoclipWorker();
+
     const queue = getAutoclipQueue();
     await queue.add("render_clip", payload, {
       jobId: payload.renderJobId,

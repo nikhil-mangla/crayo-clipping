@@ -45,6 +45,51 @@ export function getAutoclipQueue(): Queue {
   return autoclipQueue;
 }
 
+let workerInstance: Worker | null = null;
+
+/**
+ * Ensures a BullMQ worker is actively running in the application process
+ */
+export function ensureAutoclipWorker(): Worker | null {
+  if (workerInstance) return workerInstance;
+
+  try {
+    const connection = getRedisClient();
+    workerInstance = new Worker(
+      AUTOCLIP_QUEUE_NAME,
+      async (job: Job) => {
+        console.log(`[Worker] Executing job ${job.id} (${job.name})`);
+        if (job.name === "process_autoclip") {
+          const { executeAutoClipPipeline } = await import("../video/autoclip-service");
+          await executeAutoClipPipeline(job.data as AutoClipJobPayload);
+        } else if (job.name === "render_clip") {
+          const { executeRenderClip } = await import("../video/autoclip-service");
+          await executeRenderClip(job.data as RenderClipJobPayload);
+        } else {
+          throw new Error(`Unknown job name: ${job.name}`);
+        }
+      },
+      {
+        connection: connection as unknown as any,
+        concurrency: 2,
+      }
+    );
+
+    workerInstance.on("completed", (job) => {
+      console.log(`[Worker] Job ${job.id} completed successfully`);
+    });
+
+    workerInstance.on("failed", (job, err) => {
+      console.error(`[Worker] Job ${job?.id} failed:`, err.message);
+    });
+
+    return workerInstance;
+  } catch (err: any) {
+    console.warn("Could not start in-process BullMQ worker:", err.message);
+    return null;
+  }
+}
+
 export interface AutoClipJobPayload {
   jobId: string;
   projectId: string;
