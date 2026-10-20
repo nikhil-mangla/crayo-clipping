@@ -31,14 +31,35 @@ export function isStreamingPlatformUrl(urlStr: string): boolean {
 }
 
 /**
+ * Returns path to cookies.txt file if configured, allowing authenticated YouTube scraping
+ */
+export function getCookiesPath(): string | null {
+  if (process.env.YOUTUBE_COOKIES_PATH && fs.existsSync(process.env.YOUTUBE_COOKIES_PATH)) {
+    return process.env.YOUTUBE_COOKIES_PATH;
+  }
+  const defaultCookiePaths = [
+    path.resolve("./storage/cookies.txt"),
+    path.resolve("./cookies.txt"),
+  ];
+  for (const p of defaultCookiePaths) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+/**
  * Extract video title & duration quickly without downloading video
  */
 export async function getRemoteVideoMetadata(url: string): Promise<RemoteVideoMetadata> {
   try {
+    const cookiePath = getCookiesPath();
     const args = [
       "-m",
       "yt_dlp",
       "--no-playlist",
+      "--js-runtimes",
+      "node",
+      ...(cookiePath ? ["--cookies", cookiePath] : []),
       "--print",
       "%(duration)s|||%(title)s",
       url,
@@ -55,8 +76,8 @@ export async function getRemoteVideoMetadata(url: string): Promise<RemoteVideoMe
       duration: !isNaN(durationNum as number) ? durationNum : null,
       title: titleStr && titleStr.length > 0 ? titleStr : null,
     };
-  } catch (err) {
-    console.warn("Failed to probe remote video metadata:", err);
+  } catch (err: any) {
+    console.warn("Failed to probe remote video metadata:", err.message || err);
     return { title: null, duration: null };
   }
 }
@@ -114,6 +135,8 @@ export async function downloadWithYtDlp(
     formatSelector = "bestvideo[height<=720]+bestaudio/best[height<=720]/best";
   }
 
+  const cookiePath = getCookiesPath();
+
   const args = [
     "-m",
     "yt_dlp",
@@ -122,6 +145,7 @@ export async function downloadWithYtDlp(
     "node",
     "--ffmpeg-location",
     ffmpegDir,
+    ...(cookiePath ? ["--cookies", cookiePath] : []),
     "-f",
     formatSelector,
     "--max-filesize",
@@ -176,14 +200,28 @@ export async function downloadWithYtDlp(
     cleanupResidualFiles(destinationPath);
 
     const msg = err.message || "";
-    if (msg.includes("max-filesize")) {
+    if (
+      msg.includes("confirm you’re not a bot") ||
+      msg.includes("confirm you're not a bot") ||
+      msg.includes("Sign in to confirm")
+    ) {
       throw new Error(
-        "The video stream exceeds the platform limit of 350MB. Please use a shorter video or segment."
+        "YouTube is temporarily challenging this server's IP with an automated bot verification check ('Sign in to confirm you’re not a bot'). For instant processing, switch to the 'Upload Video' tab to upload the MP4 directly, connect to a mobile hotspot/VPN, or place a cookies.txt file in ./storage/cookies.txt."
       );
     }
-    if (msg.includes("Private video") || msg.includes("Sign in")) {
+    if (msg.includes("max-filesize")) {
       throw new Error(
-        "This video is private, restricted, or requires login. Please provide a public video URL."
+        "The video stream exceeds the platform limit of 480MB. Please use a shorter video or segment."
+      );
+    }
+    if (msg.includes("Private video")) {
+      throw new Error(
+        "This video is set to private by its creator. Please provide a public video URL."
+      );
+    }
+    if (msg.includes("Requires login") || msg.includes("age-restricted")) {
+      throw new Error(
+        "This video is age-restricted or requires account login on YouTube."
       );
     }
     if (msg.includes("No supported JavaScript runtime")) {
