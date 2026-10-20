@@ -4,6 +4,11 @@ import { execSafeProcess } from "./ffmpeg";
 
 const MAX_DOWNLOAD_SIZE = 500 * 1024 * 1024; // 500MB
 
+export interface RemoteVideoMetadata {
+  title: string | null;
+  duration: number | null; // in seconds
+}
+
 export function isStreamingPlatformUrl(urlStr: string): boolean {
   try {
     const parsed = new URL(urlStr);
@@ -26,58 +31,169 @@ export function isStreamingPlatformUrl(urlStr: string): boolean {
 }
 
 /**
- * Extract video title using yt-dlp metadata
+ * Extract video title & duration quickly without downloading video
+ */
+export async function getRemoteVideoMetadata(url: string): Promise<RemoteVideoMetadata> {
+  try {
+    const args = [
+      "-m",
+      "yt_dlp",
+      "--no-playlist",
+      "--print",
+      "%(duration)s|||%(title)s",
+      url,
+    ];
+    const { stdout } = await execSafeProcess("python3", args, 25000);
+    const lines = stdout.trim().split("\n");
+    const lastLine = lines[lines.length - 1] || "";
+    const parts = lastLine.split("|||");
+
+    const durationNum = parts[0] ? parseFloat(parts[0]) : null;
+    const titleStr = parts[1] ? parts[1].trim() : null;
+
+    return {
+      duration: !isNaN(durationNum as number) ? durationNum : null,
+      title: titleStr && titleStr.length > 0 ? titleStr : null,
+    };
+  } catch (err) {
+    console.warn("Failed to probe remote video metadata:", err);
+    return { title: null, duration: null };
+  }
+}
+
+/**
+ * Legacy wrapper for title only
  */
 export async function getRemoteVideoTitle(url: string): Promise<string | null> {
+  const meta = await getRemoteVideoMetadata(url);
+  return meta.title;
+}
+
+/**
+ * Clean up all residual partial files created by yt-dlp with the given base path
+ */
+export function cleanupResidualFiles(basePath: string): void {
+  const dir = path.dirname(basePath);
+  const baseName = path.basename(basePath, path.extname(basePath));
+  if (!fs.existsSync(dir)) return;
+
   try {
-    const args = ["-m", "yt_dlp", "--print", "title", "--no-playlist", url];
-    const { stdout } = await execSafeProcess("python3", args, 20000);
-    const title = stdout.trim();
-    return title.length > 0 ? title : null;
-  } catch {
-    return null;
-  }
+    const files = fs.readdirSync(dir);
+    for (const file of files) {
+      if (file.startsWith(baseName) && file !== path.basename(basePath)) {
+        try {
+          fs.unlinkSync(path.join(dir, file));
+        } catch {}
+      }
+    }
+  } catch {}
 }
 
 /**
  * Download video stream from YouTube, Vimeo, TikTok, etc. using yt-dlp
  */
-export async function downloadWithYtDlp(url: string, destinationPath: string): Promise<void> {
+export async function downloadWithYtDlp(
+  url: string,
+  destinationPath: string,
+  durationHint?: number | null
+): Promise<void> {
   const dir = path.dirname(destinationPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  // Target 720p/480p compact format to keep downloads fast and disk-safe (~15-40MB)
+  // Determine ffmpeg directory
+  const ffmpegPath = process.env.FFMPEG_PATH || "/opt/homebrew/bin/ffmpeg";
+  const ffmpegDir = fs.existsSync(ffmpegPath) ? path.dirname(ffmpegPath) : "/opt/homebrew/bin";
+
+  // Dynamic format selection:
+  // - Short videos (<= 10 min): 720p
+  // - Medium videos (<= 30 min): 480p
+  // - Long videos (> 30 min): 360p (keeps file size under 150MB, fast processing, disk-safe)
+  let formatSelector = "bestvideo[height<=720]+bestaudio/best[height<=720]/best";
+  if (durationHint && durationHint > 1800) {
+    formatSelector = "bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo[height<=480]+bestaudio/best";
+  } else if (durationHint && durationHint > 600) {
+    formatSelector = "bestvideo[height<=480]+bestaudio/best[height<=480]/best";
+  }
+
   const args = [
     "-m",
     "yt_dlp",
     "--no-playlist",
     "--js-runtimes",
     "node",
+    "--ffmpeg-location",
+    ffmpegDir,
     "-f",
-    "b[height<=720][ext=mp4]/best[height<=720]/bestvideo[height<=720]+bestaudio/best",
+    formatSelector,
     "--max-filesize",
-    "200M",
+    "350M",
     "--merge-output-format",
     "mp4",
-    "--no-part",
     "-o",
     destinationPath,
     url,
   ];
 
   try {
-    await execSafeProcess("python3", args, 300000); // 5 min timeout
-  } catch (err) {
-    // Clean up any residual partial files on disk
+    await execSafeProcess("python3", args, 360000); // 6 min timeout
+
+    // Check if the expected MP4 was generated
+    if (!fs.existsSync(destinationPath) || fs.statSync(destinationPath).size < 1000) {
+      // Check if yt-dlp saved as another extension (.mkv, .webm)
+      const baseName = destinationPath.replace(/\.mp4$/, "");
+      const possibleExtensions = [".webm", ".mkv", ".mp4.webm", ".mp4.mkv"];
+      let foundAltPath: string | null = null;
+
+      for (const ext of possibleExtensions) {
+        const candidate = `${baseName}${ext}`;
+        if (fs.existsSync(candidate) && fs.statSync(candidate).size > 1000) {
+          foundAltPath = candidate;
+          break;
+        }
+      }
+
+      if (foundAltPath) {
+        // Remux to mp4 container
+        await execSafeProcess(
+          ffmpegPath,
+          ["-y", "-i", foundAltPath, "-c", "copy", destinationPath],
+          120000
+        );
+        try { fs.unlinkSync(foundAltPath); } catch {}
+      } else {
+        throw new Error(
+          `Video download completed but output file could not be finalized at ${destinationPath}. Check URL permissions.`
+        );
+      }
+    }
+
+    // Clean up any stray fragments
+    cleanupResidualFiles(destinationPath);
+  } catch (err: any) {
+    // Clean up destination and all partial download fragments
     if (fs.existsSync(destinationPath)) {
       try { fs.unlinkSync(destinationPath); } catch {}
     }
-    const partialYtdl = `${destinationPath}.ytdl`;
-    if (fs.existsSync(partialYtdl)) {
-      try { fs.unlinkSync(partialYtdl); } catch {}
+    cleanupResidualFiles(destinationPath);
+
+    const msg = err.message || "";
+    if (msg.includes("max-filesize")) {
+      throw new Error(
+        "The video stream exceeds the platform limit of 350MB. Please use a shorter video or segment."
+      );
     }
+    if (msg.includes("Private video") || msg.includes("Sign in")) {
+      throw new Error(
+        "This video is private, restricted, or requires login. Please provide a public video URL."
+      );
+    }
+    if (msg.includes("No supported JavaScript runtime")) {
+      // yt-dlp warning, not the fatal error
+      throw new Error(`Video download failed: ${msg.split("\n").filter((l: string) => !l.includes("WARNING")).join(" ")}`);
+    }
+
     throw err;
   }
 }

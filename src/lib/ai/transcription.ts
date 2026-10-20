@@ -139,7 +139,7 @@ export class LocalEnergyFallbackProvider implements ITranscriptionProvider {
 
     let combinedOutput = "";
     try {
-      const { stdout, stderr } = await execSafeProcess(FFMPEG_PATH, args, 60000);
+      const { stdout, stderr } = await execSafeProcess(FFMPEG_PATH, args, 180000);
       combinedOutput = stdout + "\n" + stderr;
     } catch (err) {
       combinedOutput = (err as Error).message || "";

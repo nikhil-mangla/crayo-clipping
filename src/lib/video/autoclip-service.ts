@@ -100,6 +100,11 @@ export async function executeAutoClipPipeline(payload: AutoClipJobPayload): Prom
       },
     });
 
+    // Clean up temporary extracted audio file to conserve disk space
+    if (fs.existsSync(audioPath)) {
+      try { fs.unlinkSync(audioPath); } catch {}
+    }
+
     // Step 4: Scene detection
     await updateJobState(jobId, {
       progress: 60,

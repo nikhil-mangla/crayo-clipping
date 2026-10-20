@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/auth/helpers";
 import { prisma } from "@/lib/db";
 import { probeMedia } from "@/lib/video/ffmpeg";
 import { dispatchAutoClipJob } from "@/lib/queue/dispatcher";
-import { isStreamingPlatformUrl, getRemoteVideoTitle, downloadWithYtDlp, downloadDirectUrl } from "@/lib/video/downloader";
+import { isStreamingPlatformUrl, getRemoteVideoMetadata, downloadWithYtDlp, downloadDirectUrl } from "@/lib/video/downloader";
 import { nanoid } from "nanoid";
 
 export const dynamic = "force-dynamic";
@@ -85,13 +85,22 @@ export async function POST(req: NextRequest) {
 
     // Platform-specific extraction (YouTube, Vimeo, TikTok, etc.)
     if (isStreamingPlatformUrl(url)) {
-      if (!title || title.trim().length === 0 || title === "Imported Video" || title === "URL Imported Video") {
-        const remoteTitle = await getRemoteVideoTitle(url);
-        if (remoteTitle) finalTitle = remoteTitle;
+      const meta = await getRemoteVideoMetadata(url);
+      if (meta.title && (!title || title.trim().length === 0 || title === "Imported Video" || title === "URL Imported Video")) {
+        finalTitle = meta.title;
+      }
+
+      if (meta.duration && meta.duration > 3600) {
+        return NextResponse.json(
+          {
+            error: `Video length (${Math.round(meta.duration / 60)} minutes) exceeds the 60-minute limit. Please use a video under 60 minutes for AutoClip processing.`,
+          },
+          { status: 400 }
+        );
       }
 
       try {
-        await downloadWithYtDlp(url, destinationPath);
+        await downloadWithYtDlp(url, destinationPath, meta.duration);
         if (fs.existsSync(destinationPath)) {
           downloadedBytes = fs.statSync(destinationPath).size;
         }
