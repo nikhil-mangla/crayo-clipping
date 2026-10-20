@@ -48,23 +48,38 @@ export async function downloadWithYtDlp(url: string, destinationPath: string): P
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  // Ensure yt-dlp outputs exactly to destinationPath
+  // Target 720p/480p compact format to keep downloads fast and disk-safe (~15-40MB)
   const args = [
     "-m",
     "yt_dlp",
     "--no-playlist",
+    "--js-runtimes",
+    "node",
     "-f",
-    "b[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+    "b[height<=720][ext=mp4]/best[height<=720]/bestvideo[height<=720]+bestaudio/best",
     "--max-filesize",
-    "500M",
+    "200M",
     "--merge-output-format",
     "mp4",
+    "--no-part",
     "-o",
     destinationPath,
     url,
   ];
 
-  await execSafeProcess("python3", args, 300000); // 5 min timeout
+  try {
+    await execSafeProcess("python3", args, 300000); // 5 min timeout
+  } catch (err) {
+    // Clean up any residual partial files on disk
+    if (fs.existsSync(destinationPath)) {
+      try { fs.unlinkSync(destinationPath); } catch {}
+    }
+    const partialYtdl = `${destinationPath}.ytdl`;
+    if (fs.existsSync(partialYtdl)) {
+      try { fs.unlinkSync(partialYtdl); } catch {}
+    }
+    throw err;
+  }
 }
 
 /**
