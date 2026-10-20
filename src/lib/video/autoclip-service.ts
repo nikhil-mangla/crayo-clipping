@@ -291,6 +291,7 @@ export async function executeRenderClip(payload: RenderClipJobPayload): Promise<
       targetWidth: 1080,
       targetHeight: 1920,
       quality: options.quality || "high",
+      antiClaimProtection: options.antiClaimProtection ?? true,
     });
 
     await updateJobState(renderJobId, {

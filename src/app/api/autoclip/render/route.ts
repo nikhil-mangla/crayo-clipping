@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
       customCropXPercent = 50,
       captionPreset = "bold_viral",
       quality = "high",
+      antiClaimProtection = true,
     } = body;
 
     if (!candidateId) {
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
           customCropXPercent,
           captionPreset,
           quality,
+          antiClaimProtection,
         },
       },
     });
@@ -81,6 +83,7 @@ export async function POST(req: NextRequest) {
         customCropXPercent,
         captionPreset,
         quality,
+        antiClaimProtection,
       },
     });
 

@@ -34,7 +34,7 @@ describe("Subtitle Generator Tests", () => {
     assert.match(ass, /\[V4\+ Styles\]/);
     assert.match(ass, /\[Events\]/);
     assert.match(ass, /Dialogue: 0,0:00:01\.00,0:00:04\.50/);
-    assert.match(ass, /Here is the key insight\./);
+    assert.match(ass, /Here is the key/);
   });
 
   test("generateSrtContent generates standard numbered SRT cues", () => {

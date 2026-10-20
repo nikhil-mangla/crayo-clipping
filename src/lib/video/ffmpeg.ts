@@ -231,6 +231,7 @@ export interface RenderClipOptions {
   targetWidth?: number; // default 1080
   targetHeight?: number; // default 1920
   quality?: "fast" | "high";
+  antiClaimProtection?: boolean; // Transforms video & audio fingerprints to prevent Content ID claims
 }
 
 /**
@@ -248,6 +249,7 @@ export async function renderVerticalClip(options: RenderClipOptions): Promise<st
     targetWidth = 1080,
     targetHeight = 1920,
     quality = "high",
+    antiClaimProtection = false,
   } = options;
 
   const outputDir = path.dirname(outputVideoPath);
@@ -257,15 +259,22 @@ export async function renderVerticalClip(options: RenderClipOptions): Promise<st
 
   const duration = Math.max(0.5, endTime - startTime);
 
+  // High-fidelity upscaling & edge enhancement filters
+  const sharpnessFilter = "flags=lanczos+accurate_rnd,unsharp=3:3:0.6:3:3:0.0";
+  const colorGradeFilter = antiClaimProtection ? ",eq=contrast=1.04:brightness=0.01:saturation=1.06" : "";
+
   // Build filter chain
   let filterChain = "";
 
   if (cropMode === "blur_background") {
     // Canvas 9:16 with blurred video filling background and crisp video in center
-    filterChain = `[0:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},boxblur=20:5[bg];[0:v]scale=${targetWidth}:-1:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v]`;
+    filterChain = `[0:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=increase,crop=${targetWidth}:${targetHeight},boxblur=20:5[bg];[0:v]scale=${targetWidth}:-1:force_original_aspect_ratio=decrease${colorGradeFilter}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v]`;
+    if (assSubtitlePath && fs.existsSync(assSubtitlePath)) {
+      const escapedAssPath = assSubtitlePath.replace(/\\/g, "/").replace(/:/g, "\\:");
+      filterChain += `;[v]ass='${escapedAssPath}'[outv]`;
+    }
   } else {
     // Direct crop to 9:16 aspect ratio
-    // Vertical slice: width is in_h * 9 / 16
     let xOffsetFormula = "(in_w-in_h*9/16)/2"; // center default
     if (cropMode === "left") {
       xOffsetFormula = "0";
@@ -276,25 +285,23 @@ export async function renderVerticalClip(options: RenderClipOptions): Promise<st
       xOffsetFormula = `(in_w-in_h*9/16)*${factor.toFixed(3)}`;
     }
 
-    // Crop then scale to target 1080x1920
-    filterChain = `crop=in_h*9/16:in_h:${xOffsetFormula}:0,scale=${targetWidth}:${targetHeight}[v]`;
-  }
+    // Crop, Lanczos upscale, unsharp mask, and optional color grade
+    filterChain = `crop=in_h*9/16:in_h:${xOffsetFormula}:0,scale=${targetWidth}:${targetHeight}:${sharpnessFilter}${colorGradeFilter}`;
 
-  // Add subtitle filter if provided
-  if (assSubtitlePath && fs.existsSync(assSubtitlePath)) {
-    // Escape path for ffmpeg filter: escape colons and backslashes
-    const escapedAssPath = assSubtitlePath.replace(/\\/g, "/").replace(/:/g, "\\:");
-    if (cropMode === "blur_background") {
-      filterChain += `;[v]ass='${escapedAssPath}'[outv]`;
+    if (assSubtitlePath && fs.existsSync(assSubtitlePath)) {
+      const escapedAssPath = assSubtitlePath.replace(/\\/g, "/").replace(/:/g, "\\:");
+      filterChain += `,ass='${escapedAssPath}'[outv]`;
     } else {
-      filterChain = `crop=in_h*9/16:in_h:${cropMode === "left" ? "0" : cropMode === "right" ? "(in_w-in_h*9/16)" : cropMode === "custom" ? `(in_w-in_h*9/16)*${(Math.max(0, Math.min(100, customCropXPercent)) / 100).toFixed(3)}` : "(in_w-in_h*9/16)/2"}:0,scale=${targetWidth}:${targetHeight},ass='${escapedAssPath}'[outv]`;
+      filterChain += "[outv]";
     }
   }
 
-  const mapOutput = assSubtitlePath && fs.existsSync(assSubtitlePath) ? "[outv]" : (cropMode === "blur_background" ? "[v]" : "[v]");
+  const mapOutput = cropMode === "blur_background" && !(assSubtitlePath && fs.existsSync(assSubtitlePath))
+    ? "[v]"
+    : "[outv]";
 
-  const preset = quality === "fast" ? "veryfast" : "medium";
-  const crf = quality === "fast" ? "26" : "22";
+  const preset = quality === "fast" ? "fast" : "medium";
+  const crf = quality === "fast" ? "22" : "19"; // High-bitrate crisp visual output
 
   const args = [
     "-y",
@@ -316,6 +323,26 @@ export async function renderVerticalClip(options: RenderClipOptions): Promise<st
     preset,
     "-crf",
     crf,
+    "-profile:v",
+    "high",
+    "-level",
+    "4.2",
+    "-pix_fmt",
+    "yuv420p",
+    "-b:v",
+    "8M",
+    "-maxrate",
+    "12M",
+    "-bufsize",
+    "16M",
+  ];
+
+  // If anti-claim protection is active, micro-shift audio tempo to modify perceptual acoustic fingerprint
+  if (antiClaimProtection) {
+    args.push("-filter:a", "atempo=1.025,equalizer=f=1000:width_type=o:width=2:g=1.5");
+  }
+
+  args.push(
     "-c:a",
     "aac",
     "-b:a",
@@ -324,8 +351,8 @@ export async function renderVerticalClip(options: RenderClipOptions): Promise<st
     "48000",
     "-movflags",
     "+faststart",
-    outputVideoPath,
-  ];
+    outputVideoPath
+  );
 
   await execSafeProcess(FFMPEG_PATH, args, 300000);
   return outputVideoPath;

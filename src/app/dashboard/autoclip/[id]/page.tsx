@@ -22,6 +22,9 @@ import {
   Layers,
   Subtitles,
   ExternalLink,
+  ShieldCheck,
+  Copy,
+  Check,
 } from "lucide-react";
 
 interface ClipCandidate {
@@ -85,6 +88,8 @@ export default function AutoClipStudioPage({
   const [cropMode, setCropMode] = useState<"center" | "left" | "right" | "blur_background" | "custom">("center");
   const [customCropX, setCustomCropX] = useState(50);
   const [captionPreset, setCaptionPreset] = useState<"bold_viral" | "electric_violet" | "minimal_clean" | "classic_dark" | "none">("bold_viral");
+  const [antiClaimProtection, setAntiClaimProtection] = useState(true);
+  const [copiedAttribution, setCopiedAttribution] = useState(false);
 
   // Player controls
   const [isPlaying, setIsPlaying] = useState(false);
@@ -235,6 +240,7 @@ export default function AutoClipStudioPage({
           customCropXPercent: customCropX,
           captionPreset,
           quality: "high",
+          antiClaimProtection,
         }),
       });
 
@@ -696,6 +702,25 @@ export default function AutoClipStudioPage({
               </select>
             </div>
 
+            {/* Anti-Claim & Copyright Transformation Mode */}
+            <div className="pt-3 border-t border-neutral-800 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer">
+                  <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                  Anti-Claim Protection Mode
+                </label>
+                <input
+                  type="checkbox"
+                  checked={antiClaimProtection}
+                  onChange={(e) => setAntiClaimProtection(e.target.checked)}
+                  className="h-4 w-4 rounded accent-violet-600 bg-neutral-950 border-neutral-700 cursor-pointer"
+                />
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-normal">
+                Applies acoustic tempo micro-shift (+2.5%) and subtle color grading to modify automated Content ID hash fingerprints while maintaining crisp speech.
+              </p>
+            </div>
+
             {/* Render Button */}
             <div className="pt-2">
               <button
@@ -758,6 +783,32 @@ export default function AutoClipStudioPage({
                     Watch rendered clip in full resolution <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
+
+                {/* YouTube Fair Use & Copyright Compliance Assistant */}
+                <div className="mt-3 pt-3 border-t border-emerald-500/20 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      YouTube Fair Use &amp; Attribution Ready
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const attributionText = `Original Source: ${project?.title || "Video"}\nFair Use Notice: This vertical excerpt is transformed with 9:16 reframing, kinetic subtitles, and analysis under 17 U.S. Code § 107 (Fair Use) for educational, discovery, and commentary purposes. All rights belong to their respective creators.\n\n#Shorts #Highlights #Trending`;
+                        navigator.clipboard.writeText(attributionText);
+                        setCopiedAttribution(true);
+                        setTimeout(() => setCopiedAttribution(false), 2500);
+                      }}
+                      className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[11px] flex items-center gap-1 transition"
+                    >
+                      {copiedAttribution ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      {copiedAttribution ? "Copied!" : "Copy Shorts Description"}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-neutral-400 leading-relaxed">
+                    <strong>Creator Tip:</strong> When uploading to YouTube Shorts, tap <em>&quot;Add Sound&quot;</em> in the mobile app to mix trending background music from YouTube&apos;s licensed library. This guarantees 100% audio monetization compliance.
+                  </p>
+                </div>
               </div>
             )}
           </div>

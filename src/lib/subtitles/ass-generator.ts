@@ -47,10 +47,11 @@ export function hexToAssColor(hex: string, alpha = "00"): string {
  * Format seconds to ASS timestamp format: H:MM:SS.cc
  */
 export function formatAssTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const cs = Math.min(99, Math.round((seconds % 1) * 100));
+  const safeSec = Math.max(0, seconds);
+  const h = Math.floor(safeSec / 3600);
+  const m = Math.floor((safeSec % 3600) / 60);
+  const s = Math.floor(safeSec % 60);
+  const cs = Math.min(99, Math.round((safeSec % 1) * 100));
 
   return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}.${cs.toString().padStart(2, "0")}`;
 }
@@ -59,16 +60,106 @@ export function formatAssTime(seconds: number): string {
  * Format seconds to SRT timestamp format: HH:MM:SS,mmm
  */
 export function formatSrtTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const ms = Math.min(999, Math.round((seconds % 1) * 1000));
+  const safeSec = Math.max(0, seconds);
+  const h = Math.floor(safeSec / 3600);
+  const m = Math.floor((safeSec % 3600) / 60);
+  const s = Math.floor(safeSec % 60);
+  const ms = Math.min(999, Math.round((safeSec % 1) * 1000));
 
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")},${ms.toString().padStart(3, "0")}`;
 }
 
 /**
- * Generates an ASS subtitle file content from segments with relative timing.
+ * Wraps text into lines with a strict character limit per line for 9:16 vertical video.
+ * Max ~18-20 characters per line guarantees text never clips off screen edges.
+ */
+export function wrapTextFor916(text: string, maxCharsPerLine = 19): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "";
+
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    if (!currentLine) {
+      currentLine = word;
+    } else if ((currentLine + " " + word).length <= maxCharsPerLine) {
+      currentLine += " " + word;
+    } else {
+      lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  // Join lines with ASS newline character \N
+  return lines.join("\\N");
+}
+
+interface MicroCue {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
+ * Subdivides long transcript segments into short, viral, punchy 3-5 word cues
+ * designed specifically for vertical 9:16 platforms (Shorts, Reels, TikTok).
+ */
+export function subdivideInto916Cues(
+  segments: SubtitleSegment[],
+  startTimeShift = 0
+): MicroCue[] {
+  const cues: MicroCue[] = [];
+
+  for (const seg of segments) {
+    const relStart = Math.max(0, seg.start - startTimeShift);
+    const relEnd = Math.max(relStart + 0.3, seg.end - startTimeShift);
+    const totalDuration = relEnd - relStart;
+
+    const words = seg.text.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+
+    // If segment is short (<= 5 words), keep as a single cue
+    if (words.length <= 5) {
+      cues.push({
+        start: relStart,
+        end: relEnd,
+        text: wrapTextFor916(words.join(" ")),
+      });
+      continue;
+    }
+
+    // Chunk into groups of 3-4 words for dynamic viral appearance
+    const chunkSize = words.length > 8 ? 4 : 3;
+    const wordGroups: string[][] = [];
+    for (let i = 0; i < words.length; i += chunkSize) {
+      wordGroups.push(words.slice(i, i + chunkSize));
+    }
+
+    const chunkDuration = totalDuration / wordGroups.length;
+
+    for (let g = 0; g < wordGroups.length; g++) {
+      const cStart = relStart + g * chunkDuration;
+      const cEnd = g === wordGroups.length - 1 ? relEnd : relStart + (g + 1) * chunkDuration;
+      const chunkText = wordGroups[g].join(" ");
+
+      cues.push({
+        start: cStart,
+        end: cEnd,
+        text: wrapTextFor916(chunkText),
+      });
+    }
+  }
+
+  return cues;
+}
+
+/**
+ * Generates an ASS subtitle file content optimized for 9:16 vertical video.
  * startTimeShift is subtracted from each segment start/end if clipping a slice of a longer video.
  */
 export function generateAssContent(
@@ -77,46 +168,46 @@ export function generateAssContent(
   options: AssStyleOptions = {}
 ): string {
   const preset = options.preset || "bold_viral";
-  const fontName = options.fontName || "Arial";
-  const fontSize = options.fontSize || 42;
-  const bottomMargin = options.bottomMargin || 180; // Above TikTok/Reels UI
+  const fontName = options.fontName || "Impact";
+  const fontSize = options.fontSize || 48; // Optimal size for 1080x1920 mobile viewing
+  const bottomMargin = options.bottomMargin || 360; // Safe area above Shorts/Reels UI bar
 
   let primaryColor = "&H00FFFFFF"; // White
   let secondaryColor = "&H0000FFFF"; // Yellow
   let outlineColor = "&H00000000"; // Black
   let backColor = "&H80000000";
   let bold = 1;
-  let outline = 4;
+  let outline = 5;
   let shadow = 2;
   let borderStyle = 1; // 1 = outline + shadow, 3 = opaque box
 
   switch (preset) {
     case "bold_viral":
-      primaryColor = "&H0000F7FF"; // Vibrant Yellow
+      primaryColor = "&H0000F7FF"; // High-visibility bright yellow (ASS BGR)
       secondaryColor = "&H00FFFFFF";
       outlineColor = "&H000B0B0B";
       bold = 1;
-      outline = 4.5;
+      outline = 5;
       shadow = 2;
       break;
     case "electric_violet":
-      primaryColor = "&H00F5E67C"; // Electric Violet in ASS BGR (&H7CE6F5)
+      primaryColor = "&H00F5E67C"; // Electric Violet
       secondaryColor = "&H00FFFFFF";
       outlineColor = "&H00000000";
       bold = 1;
-      outline = 4;
+      outline = 4.5;
       shadow = 2;
       break;
     case "minimal_clean":
       primaryColor = "&H00FFFFFF";
       outlineColor = "&H00111111";
-      bold = 0;
-      outline = 2;
+      bold = 1;
+      outline = 3;
       shadow = 1;
       break;
     case "classic_dark":
       primaryColor = "&H00FFFFFF";
-      borderStyle = 3; // Box
+      borderStyle = 3; // Box pill
       backColor = "&HAA000000";
       outline = 2;
       shadow = 0;
@@ -125,49 +216,31 @@ export function generateAssContent(
       break;
   }
 
+  // ASS Header targeting vertical 1080x1920 with safe area margins
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
 ScaledBorderAndShadow: yes
-WrapStyle: 0
+WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontName},${fontSize},${primaryColor},${secondaryColor},${outlineColor},${backColor},${bold},0,0,0,100,100,0,0,${borderStyle},${outline},${shadow},2,60,60,${bottomMargin},1
+Style: Default,${fontName},${fontSize},${primaryColor},${secondaryColor},${outlineColor},${backColor},${bold},0,0,0,100,100,0,0,${borderStyle},${outline},${shadow},2,90,90,${bottomMargin},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 
+  // Generate dynamic 9:16 safe micro-cues
+  const cues = subdivideInto916Cues(segments, startTimeShift);
   const events: string[] = [];
 
-  for (const seg of segments) {
-    const relStart = Math.max(0, seg.start - startTimeShift);
-    const relEnd = Math.max(relStart + 0.2, seg.end - startTimeShift);
+  for (const cue of cues) {
+    const startAss = formatAssTime(cue.start);
+    const endAss = formatAssTime(cue.end);
 
-    const startAss = formatAssTime(relStart);
-    const endAss = formatAssTime(relEnd);
-
-    // If word-level timing is available, we can format dynamic karaoke or highlighted words
-    let text = seg.text.trim();
-
-    // Wrap long lines for 9:16 vertical view (limit ~24 characters per line)
-    if (text.length > 28 && !text.includes("\\N")) {
-      const words = text.split(" ");
-      let line1 = "";
-      let line2 = "";
-      for (const w of words) {
-        if ((line1 + " " + w).length <= 22) {
-          line1 = line1 ? `${line1} ${w}` : w;
-        } else {
-          line2 = line2 ? `${line2} ${w}` : w;
-        }
-      }
-      text = line2 ? `${line1}\\N${line2}` : line1;
-    }
-
-    events.push(`Dialogue: 0,${startAss},${endAss},Default,,0,0,0,,${text}`);
+    events.push(`Dialogue: 0,${startAss},${endAss},Default,,0,0,0,,${cue.text}`);
   }
 
   return header + events.join("\n") + "\n";

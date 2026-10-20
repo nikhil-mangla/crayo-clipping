@@ -113,5 +113,6 @@ export interface RenderClipJobPayload {
     customCropXPercent?: number;
     captionPreset?: "bold_viral" | "electric_violet" | "minimal_clean" | "classic_dark" | "none";
     quality?: "fast" | "high";
+    antiClaimProtection?: boolean;
   };
 }

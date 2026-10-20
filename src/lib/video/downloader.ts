@@ -106,15 +106,12 @@ export async function downloadWithYtDlp(
   const ffmpegPath = process.env.FFMPEG_PATH || "/opt/homebrew/bin/ffmpeg";
   const ffmpegDir = fs.existsSync(ffmpegPath) ? path.dirname(ffmpegPath) : "/opt/homebrew/bin";
 
-  // Dynamic format selection:
-  // - Short videos (<= 10 min): 720p
-  // - Medium videos (<= 30 min): 480p
-  // - Long videos (> 30 min): 360p (keeps file size under 150MB, fast processing, disk-safe)
-  let formatSelector = "bestvideo[height<=720]+bestaudio/best[height<=720]/best";
+  // High Definition format selection:
+  // - High quality 1080p/720p source keeps cropped 9:16 vertical details crisp and sharp
+  // - For videos > 30 minutes, 720p delivers excellent clarity while staying ~300MB
+  let formatSelector = "bestvideo[height<=1080][ext=mp4]+bestaudio/bestvideo[height<=1080]+bestaudio/bestvideo[height<=720]+bestaudio/best";
   if (durationHint && durationHint > 1800) {
-    formatSelector = "bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo[height<=480]+bestaudio/best";
-  } else if (durationHint && durationHint > 600) {
-    formatSelector = "bestvideo[height<=480]+bestaudio/best[height<=480]/best";
+    formatSelector = "bestvideo[height<=720]+bestaudio/best[height<=720]/best";
   }
 
   const args = [
@@ -128,7 +125,7 @@ export async function downloadWithYtDlp(
     "-f",
     formatSelector,
     "--max-filesize",
-    "350M",
+    "480M",
     "--merge-output-format",
     "mp4",
     "-o",
