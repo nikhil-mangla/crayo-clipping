@@ -1,0 +1,10 @@
+storage/
+.next/
+node_modules/
+*.mp4
+*.mov
+*.webm
+*.wav
+*.mp3
+*.vtt
+.git/
