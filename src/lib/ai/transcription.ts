@@ -1,4 +1,5 @@
 import fs from "fs";
+import path from "path";
 import { execSafeProcess } from "@/lib/video/ffmpeg";
 
 export interface TranscriptWord {
@@ -22,7 +23,7 @@ export interface TranscriptionResult {
   words: TranscriptWord[];
   duration: number;
   language: string;
-  provider: "openai_whisper" | "local_energy_fallback";
+  provider: "openai_whisper" | "faster_whisper" | "youtube_subtitles" | "local_energy_fallback";
   isFallback: boolean;
 }
 
@@ -260,12 +261,60 @@ export class LocalEnergyFallbackProvider implements ITranscriptionProvider {
 }
 
 /**
+ * Local Faster-Whisper provider using locally cached Systran models
+ */
+export class FasterWhisperProvider implements ITranscriptionProvider {
+  name = "faster_whisper";
+
+  isAvailable(): boolean {
+    const scriptPath = path.resolve("./scripts/transcribe.py");
+    return fs.existsSync(scriptPath);
+  }
+
+  async transcribe(audioFilePath: string, language = "en"): Promise<TranscriptionResult> {
+    if (!fs.existsSync(audioFilePath)) {
+      throw new Error(`Audio file not found at ${audioFilePath}`);
+    }
+
+    const scriptPath = path.resolve("./scripts/transcribe.py");
+    const { stdout, stderr } = await execSafeProcess(
+      "python3",
+      [scriptPath, audioFilePath, language],
+      300000 // 5 minutes timeout
+    );
+
+    try {
+      const parsed = JSON.parse(stdout.trim());
+      if (parsed.error) {
+        throw new Error(`Local whisper error: ${parsed.error}`);
+      }
+
+      return {
+        text: parsed.text || "",
+        segments: parsed.segments || [],
+        words: parsed.words || [],
+        duration: parsed.duration || 0,
+        language: parsed.language || language,
+        provider: "faster_whisper",
+        isFallback: false,
+      };
+    } catch (e: any) {
+      throw new Error(`Failed to parse local whisper output: ${e.message}. Stderr: ${stderr}`);
+    }
+  }
+}
+
+/**
  * Returns the best available transcription provider
  */
 export function getTranscriptionProvider(): ITranscriptionProvider {
   const whisper = new OpenAIWhisperProvider();
   if (whisper.isAvailable()) {
     return whisper;
+  }
+  const fasterWhisper = new FasterWhisperProvider();
+  if (fasterWhisper.isAvailable()) {
+    return fasterWhisper;
   }
   return new LocalEnergyFallbackProvider();
 }

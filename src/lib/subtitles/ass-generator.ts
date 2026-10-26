@@ -20,6 +20,7 @@ export type CaptionPreset =
   | "electric_violet"  // Violet accent with crisp white text
   | "minimal_clean"    // Clean white sans-serif with subtle drop shadow
   | "classic_dark"     // White text with translucent black pill background
+  | "mdscae_cinema"    // Signature MDS CAE: Ivory white, subtle charcoal outline, elegant lower-center cinematic typography
   | "none";
 
 export interface AssStyleOptions {
@@ -168,9 +169,9 @@ export function generateAssContent(
   options: AssStyleOptions = {}
 ): string {
   const preset = options.preset || "bold_viral";
-  const fontName = options.fontName || "Impact";
-  const fontSize = options.fontSize || 48; // Optimal size for 1080x1920 mobile viewing
-  const bottomMargin = options.bottomMargin || 360; // Safe area above Shorts/Reels UI bar
+  const fontName = options.fontName || (preset === "mdscae_cinema" ? "Arial" : "Impact");
+  const fontSize = options.fontSize || (preset === "mdscae_cinema" ? 44 : 48); // Optimal size for 1080x1920 mobile viewing
+  const bottomMargin = options.bottomMargin || (preset === "mdscae_cinema" ? 430 : 360); // Safe area above Shorts/Reels UI bar
 
   let primaryColor = "&H00FFFFFF"; // White
   let secondaryColor = "&H0000FFFF"; // Yellow
@@ -182,6 +183,15 @@ export function generateAssContent(
   let borderStyle = 1; // 1 = outline + shadow, 3 = opaque box
 
   switch (preset) {
+    case "mdscae_cinema":
+      primaryColor = "&H00FAF8F5"; // Ivory warm white (ASS BGR format)
+      secondaryColor = "&H00E2E2E2";
+      outlineColor = "&H00080808"; // Deep subtle charcoal outline
+      backColor = "&HA0000000";   // Translucent back shadow
+      bold = 1;
+      outline = 3.2;
+      shadow = 1.8;
+      break;
     case "bold_viral":
       primaryColor = "&H0000F7FF"; // High-visibility bright yellow (ASS BGR)
       secondaryColor = "&H00FFFFFF";

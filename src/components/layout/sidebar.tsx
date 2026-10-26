@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUIStore } from "@/stores/ui-store";
+import { Youtube } from "@/components/ui/youtube-icon";
 import {
   LayoutDashboard,
   Plus,
@@ -34,6 +35,7 @@ const navItems = [
   { href: "/dashboard/editor", label: "Video Editor", icon: Film },
   { href: "/dashboard/library", label: "Media Library", icon: FolderOpen },
   { href: "/dashboard/projects", label: "Projects", icon: Layers },
+  { href: "/dashboard/youtube", label: "YouTube Manager", icon: Youtube },
 ];
 
 const bottomItems = [

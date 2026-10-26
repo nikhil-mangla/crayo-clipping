@@ -111,8 +111,14 @@ export interface RenderClipJobPayload {
   options: {
     cropMode?: "center" | "left" | "right" | "blur_background" | "custom";
     customCropXPercent?: number;
-    captionPreset?: "bold_viral" | "electric_violet" | "minimal_clean" | "classic_dark" | "none";
-    quality?: "fast" | "high";
+    captionPreset?: "bold_viral" | "electric_violet" | "minimal_clean" | "classic_dark" | "mdscae_cinema" | "none";
+    quality?: "fast" | "high" | "ultra_2k" | "cinema_4k";
+    resolution?: "1080p" | "2k" | "4k";
+    videoFilter?: string;
     antiClaimProtection?: boolean;
+    removeWatermark?: boolean;
+    watermarkZone?: "auto" | "bottom_right" | "top_right" | "top_left" | "bottom_left" | "all" | "none";
+    musicTrack?: string;
+    musicVolume?: number;
   };
 }

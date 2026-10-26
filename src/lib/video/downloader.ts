@@ -30,6 +30,18 @@ export function isStreamingPlatformUrl(urlStr: string): boolean {
   }
 }
 
+export function getNodeRuntimeArgs(): string[] {
+  const possiblePaths = [
+    "/opt/homebrew/bin/node",
+    "/usr/local/bin/node",
+    "/usr/bin/node",
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) return ["--js-runtimes", `node:${p}`];
+  }
+  return ["--js-runtimes", "node"];
+}
+
 /**
  * Returns path to cookies.txt file if configured, allowing authenticated YouTube scraping
  */
@@ -57,8 +69,7 @@ export async function getRemoteVideoMetadata(url: string): Promise<RemoteVideoMe
       "-m",
       "yt_dlp",
       "--no-playlist",
-      "--js-runtimes",
-      "node",
+      ...getNodeRuntimeArgs(),
       ...(cookiePath ? ["--cookies", cookiePath] : []),
       "--print",
       "%(duration)s|||%(title)s",
@@ -101,7 +112,12 @@ export function cleanupResidualFiles(basePath: string): void {
   try {
     const files = fs.readdirSync(dir);
     for (const file of files) {
-      if (file.startsWith(baseName) && file !== path.basename(basePath)) {
+      if (
+        file.startsWith(baseName) &&
+        file !== path.basename(basePath) &&
+        !file.endsWith(".vtt") &&
+        !file.endsWith(".srt")
+      ) {
         try {
           fs.unlinkSync(path.join(dir, file));
         } catch {}
@@ -128,11 +144,11 @@ export async function downloadWithYtDlp(
   const ffmpegDir = fs.existsSync(ffmpegPath) ? path.dirname(ffmpegPath) : "/opt/homebrew/bin";
 
   // High Definition format selection:
-  // - High quality 1080p/720p source keeps cropped 9:16 vertical details crisp and sharp
-  // - For videos > 30 minutes, 720p delivers excellent clarity while staying ~300MB
-  let formatSelector = "bestvideo[height<=1080][ext=mp4]+bestaudio/bestvideo[height<=1080]+bestaudio/bestvideo[height<=720]+bestaudio/best";
-  if (durationHint && durationHint > 1800) {
-    formatSelector = "bestvideo[height<=720]+bestaudio/best[height<=720]/best";
+  // - 720p HD (1280x720) downloads in ~150-300MB, balancing crystal clear HD detail with fast speeds.
+  // - For long 90-180 min videos, 720p/480p keeps storage safe while Lanczos filter sharpens vertical shorts.
+  let formatSelector = "bestvideo[height<=720]+bestaudio/best[height<=720]/bestvideo[height<=1080]+bestaudio/best";
+  if (durationHint && durationHint > 5400) {
+    formatSelector = "bestvideo[height<=720]+bestaudio/best[height<=720]/best[height<=480]/best";
   }
 
   const cookiePath = getCookiesPath();
@@ -141,15 +157,21 @@ export async function downloadWithYtDlp(
     "-m",
     "yt_dlp",
     "--no-playlist",
-    "--js-runtimes",
-    "node",
+    ...getNodeRuntimeArgs(),
     "--ffmpeg-location",
     ffmpegDir,
     ...(cookiePath ? ["--cookies", cookiePath] : []),
+    "--write-auto-sub",
+    "--write-sub",
+    "--sub-lang",
+    "en",
+    "--sub-format",
+    "vtt",
+    "--no-abort-on-error",
     "-f",
     formatSelector,
     "--max-filesize",
-    "480M",
+    "1400M",
     "--merge-output-format",
     "mp4",
     "-o",
@@ -158,7 +180,7 @@ export async function downloadWithYtDlp(
   ];
 
   try {
-    await execSafeProcess("python3", args, 360000); // 6 min timeout
+    await execSafeProcess("python3", args, 900000); // 15 min timeout for long videos
 
     // Check if the expected MP4 was generated
     if (!fs.existsSync(destinationPath) || fs.statSync(destinationPath).size < 1000) {

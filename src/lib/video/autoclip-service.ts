@@ -8,7 +8,8 @@ import {
   generateThumbnail,
   renderVerticalClip,
 } from "./ffmpeg";
-import { getTranscriptionProvider, TranscriptSegment } from "../ai/transcription";
+import { getTranscriptionProvider, TranscriptSegment, TranscriptionResult } from "../ai/transcription";
+import { parseVttToSegments } from "./vtt-parser";
 import { detectCandidateHighlights } from "../ai/highlight-detector";
 import { writeAssFile, CaptionPreset } from "../subtitles/ass-generator";
 import { AutoClipJobPayload, RenderClipJobPayload } from "../queue/autoclip-queue";
@@ -84,8 +85,75 @@ export async function executeAutoClipPipeline(payload: AutoClipJobPayload): Prom
       stage: "Transcribing speech and extracting timestamps",
     });
 
-    const provider = getTranscriptionProvider();
-    const transcriptResult = await provider.transcribe(audioPath, options.language || "en");
+    let transcriptResult: TranscriptionResult | null = null;
+
+    // Check if a downloaded subtitle stream (.vtt) exists alongside the video
+    const videoDir = path.dirname(sourceVideoPath);
+    const videoBase = path.basename(sourceVideoPath);
+    const nameWithoutExt = path.basename(sourceVideoPath, path.extname(sourceVideoPath));
+
+    const candidateVttFiles = [
+      path.join(videoDir, `${videoBase}.en.vtt`),
+      path.join(videoDir, `${videoBase}.vtt`),
+      path.join(videoDir, `${nameWithoutExt}.en.vtt`),
+      path.join(videoDir, `${nameWithoutExt}.en-orig.vtt`),
+      path.join(videoDir, `${nameWithoutExt}.en-US.vtt`),
+      path.join(videoDir, `${nameWithoutExt}.vtt`),
+    ];
+
+    let foundVttPath: string | null = null;
+    for (const vttFile of candidateVttFiles) {
+      if (fs.existsSync(vttFile) && fs.statSync(vttFile).size > 50) {
+        foundVttPath = vttFile;
+        break;
+      }
+    }
+
+    if (!foundVttPath) {
+      try {
+        const files = fs.readdirSync(videoDir);
+        for (const file of files) {
+          if (file.startsWith(nameWithoutExt) && (file.endsWith(".vtt") || file.endsWith(".srt"))) {
+            const fullPath = path.join(videoDir, file);
+            if (fs.statSync(fullPath).size > 50) {
+              foundVttPath = fullPath;
+              break;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (foundVttPath) {
+      console.log(`[AutoClip] Found downloaded subtitle stream at ${foundVttPath}`);
+      try {
+        const vttContent = fs.readFileSync(foundVttPath, "utf-8");
+        const segments = parseVttToSegments(vttContent);
+        if (segments && segments.length > 0) {
+          const allWords = segments.flatMap((s) => s.words || []);
+          const fullText = segments.map((s) => s.text).join(" ");
+          transcriptResult = {
+            text: fullText,
+            segments,
+            words: allWords,
+            duration: segments[segments.length - 1].end,
+            language: "en",
+            provider: "youtube_subtitles",
+            isFallback: false,
+          };
+          console.log(`[AutoClip] Successfully loaded ${segments.length} exact spoken segments from VTT captions`);
+        }
+      } catch (vttErr) {
+        console.warn(`[AutoClip] Failed to parse VTT subtitle file:`, vttErr);
+      }
+    }
+
+    // If no subtitles were downloaded, run high-precision speech-to-text provider
+    if (!transcriptResult) {
+      const provider = getTranscriptionProvider();
+      console.log(`[AutoClip] Transcribing audio with provider: ${provider.name}`);
+      transcriptResult = await provider.transcribe(audioPath, options.language || "en");
+    }
 
     // Save transcript in database
     await prisma.transcript.create({
@@ -291,7 +359,13 @@ export async function executeRenderClip(payload: RenderClipJobPayload): Promise<
       targetWidth: 1080,
       targetHeight: 1920,
       quality: options.quality || "high",
+      resolution: options.resolution,
+      videoFilter: options.videoFilter || "none",
       antiClaimProtection: options.antiClaimProtection ?? true,
+      removeWatermark: (options as any).removeWatermark ?? true,
+      watermarkZone: (options as any).watermarkZone || "auto",
+      musicTrack: options.musicTrack,
+      musicVolume: options.musicVolume,
     });
 
     await updateJobState(renderJobId, {
@@ -332,6 +406,9 @@ export async function executeRenderClip(payload: RenderClipJobPayload): Promise<
           exportId: exportRecord.id,
           renderedCropMode: options.cropMode,
           captionPreset,
+          videoFilter: options.videoFilter || "none",
+          removeWatermark: (options as any).removeWatermark ?? true,
+          watermarkZone: (options as any).watermarkZone || "auto",
         },
       },
     });

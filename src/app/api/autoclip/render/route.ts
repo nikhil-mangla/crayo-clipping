@@ -19,7 +19,13 @@ export async function POST(req: NextRequest) {
       customCropXPercent = 50,
       captionPreset = "bold_viral",
       quality = "high",
+      resolution = "2k",
+      videoFilter = "none",
       antiClaimProtection = true,
+      removeWatermark = true,
+      watermarkZone = "auto",
+      musicTrack = "none",
+      musicVolume = 0.18,
     } = body;
 
     if (!candidateId) {
@@ -61,7 +67,13 @@ export async function POST(req: NextRequest) {
           customCropXPercent,
           captionPreset,
           quality,
+          resolution,
+          videoFilter,
           antiClaimProtection,
+          removeWatermark,
+          watermarkZone,
+          musicTrack,
+          musicVolume,
         },
       },
     });
@@ -83,7 +95,13 @@ export async function POST(req: NextRequest) {
         customCropXPercent,
         captionPreset,
         quality,
+        resolution,
+        videoFilter,
         antiClaimProtection,
+        removeWatermark,
+        watermarkZone,
+        musicTrack,
+        musicVolume,
       },
     });
 

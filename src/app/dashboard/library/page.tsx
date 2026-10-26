@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import YouTubeUploadModal from "@/components/youtube/upload-modal";
+import { Youtube } from "@/components/ui/youtube-icon";
 import {
   FolderOpen,
   Film,
@@ -31,6 +33,7 @@ export default function MediaLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedType, setSelectedType] = useState<string>("ALL");
+  const [selectedUploadAsset, setSelectedUploadAsset] = useState<MediaItem | null>(null);
 
   const loadAssets = async (type = "ALL") => {
     setLoading(true);
@@ -160,7 +163,17 @@ export default function MediaLibraryPage() {
                 <span className="text-[10px] text-neutral-600">
                   {new Date(asset.createdAt).toLocaleDateString()}
                 </span>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-1.5">
+                  {asset.type === "VIDEO" && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedUploadAsset(asset)}
+                      className="p-1.5 hover:bg-red-500/20 text-neutral-400 hover:text-red-400 rounded transition flex items-center gap-1"
+                      title="Publish to YouTube"
+                    >
+                      <Youtube className="h-3.5 w-3.5 text-red-500" />
+                    </button>
+                  )}
                   <a
                     href={asset.url}
                     download
@@ -183,6 +196,21 @@ export default function MediaLibraryPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* YouTube Publishing Slide-over Modal */}
+      {selectedUploadAsset && (
+        <YouTubeUploadModal
+          isOpen={!!selectedUploadAsset}
+          onClose={() => setSelectedUploadAsset(null)}
+          videoDetails={{
+            title: `${selectedUploadAsset.name.replace(/\.[^/.]+$/, "").slice(0, 90)} #Shorts`,
+            description: `Original clip published from ClipForge AI Media Library.\n\n#Shorts #Viral #ClipForge`,
+            mediaAssetId: selectedUploadAsset.id,
+            videoPath: selectedUploadAsset.url,
+            tags: ["Shorts", "Viral", "ClipForge"],
+          }}
+        />
       )}
     </div>
   );

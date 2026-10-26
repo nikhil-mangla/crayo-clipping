@@ -314,10 +314,68 @@ export default function AutoClipHubPage() {
                     onChange={(e) => setTargetCount(Number(e.target.value))}
                     className="w-full p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white"
                   >
-                    <option value={2}>2 Clips</option>
-                    <option value={4}>4 Clips (Recommended)</option>
-                    <option value={6}>6 Clips</option>
-                    <option value={8}>8 Clips</option>
+                    <option value={3}>3 Clips (Quick Highlights)</option>
+                    <option value={4}>4 Clips (Standard Pack)</option>
+                    <option value={6}>6 Clips (Viral Pack)</option>
+                    <option value={8}>8 Clips (Creator Bundle)</option>
+                    <option value={10}>10 Clips (Mega Pack)</option>
+                    <option value={12}>12 Clips (Pro Studio)</option>
+                    <option value={15}>15 Clips (Full Coverage)</option>
+                    <option value={20}>20 Clips (All Viral Moments)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-neutral-400 block mb-1">Min Duration</label>
+                  <select
+                    value={minDuration}
+                    onChange={(e) => setMinDuration(Number(e.target.value))}
+                    className="w-full p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white"
+                  >
+                    <option value={10}>10 seconds</option>
+                    <option value={15}>15 seconds</option>
+                    <option value={20}>20 seconds</option>
+                    <option value={30}>30 seconds</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-neutral-400 block mb-1">Max Duration</label>
+                  <select
+                    value={maxDuration}
+                    onChange={(e) => setMaxDuration(Number(e.target.value))}
+                    className="w-full p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white"
+                  >
+                    <option value={30}>30 seconds</option>
+                    <option value={45}>45 seconds</option>
+                    <option value={60}>60 seconds (Shorts limit)</option>
+                    <option value={90}>90 seconds (Reels limit)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Advanced Clip Controls for URL */}
+            <div className="border border-neutral-800 rounded-xl p-4 bg-neutral-950/60 space-y-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-neutral-300">
+                <Sliders className="h-4 w-4 text-violet-400" />
+                <span>Clip Generation Preferences</span>
+              </div>
+
+              <div className="grid sm:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <label className="text-neutral-400 block mb-1">Target Clips Count</label>
+                  <select
+                    value={targetCount}
+                    onChange={(e) => setTargetCount(Number(e.target.value))}
+                    className="w-full p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white"
+                  >
+                    <option value={3}>3 Clips (Quick Highlights)</option>
+                    <option value={4}>4 Clips (Standard Pack)</option>
+                    <option value={6}>6 Clips (Viral Pack)</option>
+                    <option value={8}>8 Clips (Creator Bundle)</option>
+                    <option value={10}>10 Clips (Mega Pack)</option>
+                    <option value={12}>12 Clips (Pro Studio)</option>
+                    <option value={15}>15 Clips (Full Coverage)</option>
+                    <option value={20}>20 Clips (All Viral Moments)</option>
                   </select>
                 </div>
                 <div>
@@ -420,6 +478,60 @@ export default function AutoClipHubPage() {
                   <option value="fr">French</option>
                   <option value="de">German</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Advanced Clip Controls for URL */}
+            <div className="border border-neutral-800 rounded-xl p-4 bg-neutral-950/60 space-y-4">
+              <div className="flex items-center gap-2 text-xs font-semibold text-neutral-300">
+                <Sliders className="h-4 w-4 text-violet-400" />
+                <span>Clip Generation Preferences</span>
+              </div>
+
+              <div className="grid sm:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <label className="text-neutral-400 block mb-1">Target Clips Count</label>
+                  <select
+                    value={targetCount}
+                    onChange={(e) => setTargetCount(Number(e.target.value))}
+                    className="w-full p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white"
+                  >
+                    <option value={3}>3 Clips (Quick Highlights)</option>
+                    <option value={4}>4 Clips (Standard Pack)</option>
+                    <option value={6}>6 Clips (Viral Pack)</option>
+                    <option value={8}>8 Clips (Creator Bundle)</option>
+                    <option value={10}>10 Clips (Mega Pack)</option>
+                    <option value={12}>12 Clips (Pro Studio)</option>
+                    <option value={15}>15 Clips (Full Coverage)</option>
+                    <option value={20}>20 Clips (All Viral Moments)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-neutral-400 block mb-1">Min Duration</label>
+                  <select
+                    value={minDuration}
+                    onChange={(e) => setMinDuration(Number(e.target.value))}
+                    className="w-full p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white"
+                  >
+                    <option value={10}>10 seconds</option>
+                    <option value={15}>15 seconds</option>
+                    <option value={20}>20 seconds</option>
+                    <option value={30}>30 seconds</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-neutral-400 block mb-1">Max Duration</label>
+                  <select
+                    value={maxDuration}
+                    onChange={(e) => setMaxDuration(Number(e.target.value))}
+                    className="w-full p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white"
+                  >
+                    <option value={30}>30 seconds</option>
+                    <option value={45}>45 seconds</option>
+                    <option value={60}>60 seconds (Shorts limit)</option>
+                    <option value={90}>90 seconds (Reels limit)</option>
+                  </select>
+                </div>
               </div>
             </div>
 

@@ -90,10 +90,11 @@ export async function POST(req: NextRequest) {
         finalTitle = meta.title;
       }
 
-      if (meta.duration && meta.duration > 3600) {
+      // Support long podcast, interview, and livestream streams up to 3 hours (180 minutes)
+      if (meta.duration && meta.duration > 10800) {
         return NextResponse.json(
           {
-            error: `Video length (${Math.round(meta.duration / 60)} minutes) exceeds the 60-minute limit. Please use a video under 60 minutes for AutoClip processing.`,
+            error: `Video length (${Math.round(meta.duration / 60)} minutes) exceeds the 3-hour limit (180 minutes). Please use a video under 3 hours for AutoClip processing.`,
           },
           { status: 400 }
         );

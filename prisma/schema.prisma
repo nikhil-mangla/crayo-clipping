@@ -37,6 +37,7 @@ model User {
   notifications Notification[]
   auditLogs     AuditLog[]
   generationJobs VideoGenerationJob[]
+  youtubeChannels YouTubeChannel[]
 
   @@index([email])
 }
@@ -555,4 +556,66 @@ enum UsageType {
   STORAGE_MB
   TRANSCRIPTION_MINUTES
   AUTOCLIP_MINUTES
+}
+
+// ============================================
+// YouTube Integration & Publishing
+// ============================================
+
+model YouTubeChannel {
+  id              String   @id @default(cuid())
+  userId          String
+  channelId       String   // YouTube channel ID (e.g. UCxxxxxxxx)
+  title           String   // Channel display name
+  description     String?  @db.Text
+  customUrl       String?
+  thumbnailUrl    String?
+  subscriberCount String?  // e.g. "142K"
+  videoCount      Int?     @default(0)
+  viewCount       String?
+  accessToken     String   @db.Text
+  refreshToken    String?  @db.Text
+  tokenExpiresAt  DateTime?
+  scope           String?
+  isDefault       Boolean  @default(false)
+  status          String   @default("ACTIVE") // ACTIVE, EXPIRED, REVOKED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  uploads         YouTubeUpload[]
+
+  @@unique([userId, channelId])
+  @@index([userId])
+  @@index([channelId])
+}
+
+model YouTubeUpload {
+  id             String    @id @default(cuid())
+  userId         String
+  channelId      String
+  exportId       String?
+  candidateId    String?
+  videoPath      String?   @db.Text
+  title          String
+  description    String?   @db.Text
+  privacy        String    @default("private") // public, unlisted, private
+  tags           String[]  @default([])
+  scheduledAt    DateTime?
+  youtubeVideoId String?   // YouTube video ID (e.g. 5qap5aO4i9A)
+  youtubeUrl     String?   // https://youtu.be/...
+  studioUrl      String?   // https://studio.youtube.com/video/.../edit
+  status         String    @default("QUEUED") // QUEUED, UPLOADING, COMPLETED, FAILED
+  progress       Int       @default(0)
+  error          String?   @db.Text
+  fileSize       Int?
+  duration       Float?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  channel        YouTubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([channelId])
+  @@index([status])
 }
